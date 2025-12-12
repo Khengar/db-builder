@@ -1,0 +1,36 @@
+code[class*="language-"],
+pre[class*="language-"] {
+  color: #333;
+  background: none;
+  font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  text-shadow: none;
+}
+
+/* Keyword color */
+.token.keyword {
+  color: #c92c2c;
+  font-weight: bold;
+}
+
+/* Function names */
+.token.function {
+  color: #2f6f9f;
+}
+
+/* Strings */
+.token.string {
+  color: #2f9f5f;
+}
+
+/* Numbers */
+.token.number {
+  color: #aa5d00;
+}
+
+/* Comments */
+.token.comment {
+  color: #707070;
+  font-style: italic;
+}

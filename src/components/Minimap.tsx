@@ -10,17 +10,13 @@ export default function MiniMap() {
   const MAP = 200;
   const WORLD = 20000;
 
-  const MINIMAP_ZOOM = 8; // adjust to 3, 5, or 6 depending on visibility
-
-
-  // FIX 1: dynamic scaling so objects appear properly sized
+  const MINIMAP_ZOOM = 5;
   const SCALE = (MAP / WORLD) * MINIMAP_ZOOM;
-
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Compute visible window inside world space → minimap space
+  // World → minimap positioning
   const worldX = -viewport.x / viewport.scale;
   const worldY = -viewport.y / viewport.scale;
 
@@ -30,41 +26,30 @@ export default function MiniMap() {
   const viewW = (window.innerWidth / viewport.scale) * SCALE;
   const viewH = (window.innerHeight / viewport.scale) * SCALE;
 
-  /* ----------------------------------------------
-        DRAG → direct viewport movement (NO SMOOTH)
-  ----------------------------------------------- */
-  const handleMouseDown = () => {
-    setIsDragging(true);
-  };
+  // Drag-to-pan (direct movement)
+  const onMouseDown = () => setIsDragging(true);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const onMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
 
     const rect = mapRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // convert minimap coords → world coords
     const worldCenterX = mx / SCALE;
     const worldCenterY = my / SCALE;
 
-    // convert world coords → viewport coords
     const newX = -(worldCenterX - window.innerWidth / 2 / viewport.scale);
     const newY = -(worldCenterY - window.innerHeight / 2 / viewport.scale);
 
-    // DIRECT pan, no animation
     setViewport(newX, newY);
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const onMouseUp = () => setIsDragging(false);
 
-  /* ----------------------------------------------
-        CLICK → SMOOTH PANNING (ONLY ON CLICK)
-  ----------------------------------------------- */
-  const handleClick = (e: React.MouseEvent) => {
-    if (isDragging) return; // prevent click after drag
+  // Smooth panning on click
+  const onClick = (e: React.MouseEvent) => {
+    if (isDragging) return;
 
     const rect = mapRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -79,51 +64,41 @@ export default function MiniMap() {
     smoothPan(targetX, targetY);
   };
 
-  // Hide minimap when too zoomed out
-  const visible = viewport.scale > 0.35;
-
   return (
     <div
       ref={mapRef}
-      className="fixed bottom-6 right-6 rounded-md bg-white shadow-xl border p-1 transition-all"
-      style={{
-        width: MAP,
-        height: MAP,
-        opacity: visible ? 1 : 0,
-        pointerEvents: visible ? "auto" : "none",
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onClick={handleClick}
+      className="fixed bottom-6 right-6 bg-white border shadow-xl rounded-md p-1"
+      style={{ width: MAP, height: MAP }}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onClick={onClick}
     >
       <svg width={MAP} height={MAP}>
-        {/* TABLES */}
+        {/* Tables */}
         {tables.map((t) => (
           <rect
             key={t.id}
             x={t.x * SCALE}
             y={t.y * SCALE}
-            width={120 * SCALE}
-            height={70 * SCALE}
+            width={80 * SCALE}
+            height={50 * SCALE}
             fill="#3b82f6"
-            opacity={0.7}
+            opacity={0.65}
             rx={2}
           />
         ))}
 
-        {/* VIEWPORT RECT */}
-        {/* VIEWPORT RECT */}
+        {/* Viewport rectangle */}
         <rect
           x={viewX}
           y={viewY}
           width={viewW}
           height={viewH}
-          fill="none"
-          stroke="#ef4444"
-          strokeWidth={2}
+          stroke="#f97316"
+          strokeWidth="2"
+          fill="transparent"
         />
-
       </svg>
     </div>
   );

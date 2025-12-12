@@ -103,6 +103,9 @@ interface DBState {
   undo: () => void;
   redo: () => void;
   recordHistory: () => void;
+
+  sqlDrawerOpen: false,
+
 }
 
 function toSnake(s: string) {
@@ -735,6 +738,7 @@ export const useDBStore = create<DBState>((set, get) => {
           selectedRelationId: null,
         };
       }),
+      setSQLDrawerOpen: (open: boolean) => set({ sqlDrawerOpen: open }),
   };
 });
 

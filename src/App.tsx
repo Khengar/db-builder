@@ -1,12 +1,16 @@
+import { useRef, useState } from "react";
+import { useEffect } from "react";
 import "./index.css";
+
 import Canvas from "./components/canvas/Canvas";
 import MiniMap from "./components/Minimap";
-import SqlPanel from "./components/SqlPanel";
+import SQLDrawer from "./components/SqlDrawer";
+import SnipOverlay from "./components/SnipOverlay";
 
 
-import { useState } from "react";
-import { useEffect } from "react";
 import { useDBStore } from "./store/dbStore";
+import { saveProject, importProject } from "./lib/projectIO";
+
 
 function App() {
   const addTable = useDBStore((s) => s.addTable);
@@ -104,6 +108,22 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const [showSQL, setShowSQL] = useState(false);
+
+  const [snipOpen, setSnipOpen] = useState(false);
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith(".dbb")) {
+      await importProject(file);
+      alert("Project loaded.");
+    }
+  };
+
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+
+
   return (
     <div className="w-full h-screen flex flex-col bg-background text-foreground">
 
@@ -128,6 +148,8 @@ function App() {
         className="flex-1 relative overflow-hidden"
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
       >
         {/* Background grid */}
         <div
@@ -141,6 +163,8 @@ function App() {
         {/* INFINITE CANVAS WRAPPER (NO OFFSETS — PURE VIEWPORT) */}
         <div
           className="absolute"
+          id="diagram-root"
+          ref={canvasWrapperRef}
           style={{
             width: "20000px",
             height: "20000px",
@@ -153,128 +177,155 @@ function App() {
       </main>
 
       {/* --------------------- TOOLBAR --------------------- */}
-      <div
-        style={{ zIndex: 999 }}
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white border shadow-lg px-6 py-3 rounded-full flex items-center gap-3"
-      >
-        <button onClick={() => addTable()} className="text-sm">
-          ➕ Table
-        </button>
-
-        <button
-          onClick={() => deleteSelected()}
-          disabled={selected.length === 0}
-          className={`text-sm ${selected.length === 0 ? "opacity-40 cursor-not-allowed" : ""
-            }`}
+      {!snipOpen && (
+        <><div
+          style={{ zIndex: 999 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white border shadow-lg px-6 py-3 rounded-full flex items-center gap-3"
         >
-          🗑️ Delete
-        </button>
+          <button onClick={() => addTable()} className="text-sm">
+            ➕ Table
+          </button>
 
-        <button className="text-sm">🔗 Relation</button>
-        <button className="text-sm">🖼️ Upload</button>
+          <button
+            onClick={() => deleteSelected()}
+            disabled={selected.length === 0}
+            className={`text-sm ${selected.length === 0 ? "opacity-40 cursor-not-allowed" : ""
+              }`}
+          >
+            🗑️ Delete
+          </button>
 
-        <button
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm shadow hover:opacity-90"
-          onClick={() => setSqlOpen(true)}
-        >
-          Build SQL
-        </button>
+          <button className="text-sm">🔗 Relation</button>
+          <button className="text-sm">🖼️ Upload</button>
+
+          <button
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm shadow hover:opacity-90"
+            onClick={() => useDBStore.getState().setSQLDrawerOpen(true)}
+          >
+            Build SQL
+          </button>
 
 
-        {/* RELATION EDITOR */}
-        {selectedRelationId && selectedRelation && (
-          <div className="flex items-center gap-2 border-l pl-4 ml-4">
-            <span className="text-sm text-gray-600">Cardinality:</span>
+          {/* RELATION EDITOR */}
+          {selectedRelationId && selectedRelation && (
+            <div className="flex items-center gap-2 border-l pl-4 ml-4">
+              <span className="text-sm text-gray-600">Cardinality:</span>
 
-            <button
-              className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "one-to-one"
-                ? "bg-blue-500 text-white"
-                : "bg-gray-200"
-                }`}
-              onClick={() =>
-                updateRelationCardinality(selectedRelationId, "one-to-one", false)
-              }
-            >
-              1—1
-            </button>
+              <button
+                className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "one-to-one"
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-200"
+                  }`}
+                onClick={() =>
+                  updateRelationCardinality(selectedRelationId, "one-to-one", false)
+                }
+              >
+                1—1
+              </button>
 
-            <button
-              className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "one-to-many"
-                ? "bg-blue-500 text-white"
-                : "bg-gray-200"
-                }`}
-              onClick={() =>
-                updateRelationCardinality(selectedRelationId, "one-to-many", false)
-              }
-            >
-              1—N
-            </button>
+              <button
+                className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "one-to-many"
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-200"
+                  }`}
+                onClick={() =>
+                  updateRelationCardinality(selectedRelationId, "one-to-many", false)
+                }
+              >
+                1—N
+              </button>
 
-            <button
-              title="Flip direction (N—1)"
-              className="px-2 py-1 rounded text-xs bg-gray-200"
-              onClick={() =>
-                updateRelationCardinality(selectedRelationId, "one-to-many", true)
-              }
-            >
-              N—1
-            </button>
+              <button
+                title="Flip direction (N—1)"
+                className="px-2 py-1 rounded text-xs bg-gray-200"
+                onClick={() =>
+                  updateRelationCardinality(selectedRelationId, "one-to-many", true)
+                }
+              >
+                N—1
+              </button>
 
-            <button
-              className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "many-to-many"
-                ? "bg-blue-500 text-white"
-                : "bg-gray-200"
-                }`}
-              onClick={() =>
-                updateRelationCardinality(selectedRelationId, "many-to-many", false)
-              }
-            >
-              N—N
-            </button>
+              <button
+                className={`px-2 py-1 rounded text-xs ${selectedRelation.cardinality === "many-to-many"
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-200"
+                  }`}
+                onClick={() =>
+                  updateRelationCardinality(selectedRelationId, "many-to-many", false)
+                }
+              >
+                N—N
+              </button>
 
-            <button
-              className="px-3 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
-              onClick={() => {
-                if (!confirm("Delete this relation?")) return;
-                deleteRelation(selectedRelationId);
+              <button
+                className="px-3 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                onClick={() => {
+                  if (!confirm("Delete this relation?")) return;
+                  deleteRelation(selectedRelationId);
+                }}
+              >
+                Delete Relation
+              </button>
+            </div>
+          )}
+          {/* ZOOM SLIDER */}
+          <div className="flex items-center gap-2 ml-4">
+            <span className="text-xs text-gray-500">Zoom:</span>
+
+            <input
+              type="range"
+              min="0.2"
+              max="4"
+              step="0.01"
+              value={viewport.scale}
+              onChange={(e) => {
+                const store = useDBStore.getState();
+                const sliderScale = Number(e.target.value);
+
+                // zoom centered on screen center
+                const rect = document.body.getBoundingClientRect();
+                const cx = rect.width / 2;
+                const cy = rect.height / 2;
+
+                store.setScale(sliderScale, cx, cy);
               }}
-            >
-              Delete Relation
+              className="w-32"
+            />
+
+            <span className="text-xs w-12 text-right">{Math.round(viewport.scale * 100)}%</span>
+            <button onClick={() => undo()}>↶ Undo</button>
+            <button onClick={() => redo()}>↷ Redo</button>
+            <button onClick={saveProject} className="text-sm">
+              💾 Save
             </button>
+
+            <input
+              type="file"
+              accept=".dbb"
+              className="hidden"
+              id="import-project"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) await importProject(file);
+              }}
+            />
+
+            <label htmlFor="import-project" className="text-sm cursor-pointer">
+              📂 Load
+            </label>
+
+            <button onClick={() => setSnipOpen(true)}>
+              📸 Export Image
+            </button>
+
           </div>
-        )}
-        {/* ZOOM SLIDER */}
-        <div className="flex items-center gap-2 ml-4">
-          <span className="text-xs text-gray-500">Zoom:</span>
-
-          <input
-            type="range"
-            min="0.2"
-            max="4"
-            step="0.01"
-            value={viewport.scale}
-            onChange={(e) => {
-              const store = useDBStore.getState();
-              const sliderScale = Number(e.target.value);
-
-              // zoom centered on screen center
-              const rect = document.body.getBoundingClientRect();
-              const cx = rect.width / 2;
-              const cy = rect.height / 2;
-
-              store.setScale(sliderScale, cx, cy);
-            }}
-            className="w-32"
-          />
-
-          <span className="text-xs w-12 text-right">{Math.round(viewport.scale * 100)}%</span>
-          <button onClick={() => undo()}>↶ Undo</button>
-<button onClick={() => redo()}>↷ Redo</button>
         </div>
-      </div>
-      <MiniMap />
-      <SqlPanel open={sqlOpen} onClose={() => setSqlOpen(false)} />
-          
+          <MiniMap />
+        </>)}
+      {snipOpen && <SnipOverlay onClose={() => setSnipOpen(false)} />}
+
+      <SQLDrawer />
+
     </div>
   );
 }
