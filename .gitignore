@@ -15,6 +15,7 @@ dist-ssr
 #manual file
 dir-Tree.ps1
 dir-tree.txt
+tree.txt
 
 # Editor directories and files
 .vscode/*
