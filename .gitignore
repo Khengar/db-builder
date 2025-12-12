@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+#manual file
+dir-Tree.ps1
+dir-Tree.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
