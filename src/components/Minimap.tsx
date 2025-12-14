@@ -1,79 +1,130 @@
+import { useRef } from "react";
 import { useDBStore } from "../store/dbStore";
-import { smoothPan } from "../store/dbStore";
-import { useRef, useState } from "react";
 
 export default function MiniMap() {
   const tables = useDBStore((s) => s.tables);
   const viewport = useDBStore((s) => s.viewport);
   const setViewport = useDBStore((s) => s.setViewport);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const MAP = 192; // Matched to w-48
-  const WORLD = 20000;
-  const MINIMAP_ZOOM = 5;
-  const SCALE = (MAP / WORLD) * MINIMAP_ZOOM;
+  // Constants for rendering
+  const MAP_WIDTH = 192; // matches w-48 (48 * 4)
+  const MAP_HEIGHT = 128; // matches h-32 (32 * 4)
+  const TABLE_W_ESTIMATE = 200;
+  const TABLE_H_ESTIMATE = 150;
 
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  // 1. Calculate the "Bounding Box" of the entire world
+  // We include both the tables AND the current viewport so the user never gets lost.
+  const getBounds = () => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-  // Logic remains same, only styling changed
-  const worldX = -viewport.x / viewport.scale;
-  const worldY = -viewport.y / viewport.scale;
-  const viewX = worldX * SCALE;
-  const viewY = worldY * SCALE;
-  const viewW = (window.innerWidth / viewport.scale) * SCALE;
-  const viewH = (window.innerHeight / viewport.scale) * SCALE;
-
-  const handleMove = (clientX: number, clientY: number) => {
-    const rect = mapRef.current!.getBoundingClientRect();
-    const mx = clientX - rect.left;
-    const my = clientY - rect.top;
-    const worldCenterX = mx / SCALE;
-    const worldCenterY = my / SCALE;
-    const newX = -(worldCenterX - window.innerWidth / 2 / viewport.scale);
-    const newY = -(worldCenterY - window.innerHeight / 2 / viewport.scale);
+    // A. Include Tables
+    if (tables.length === 0) return { minX: -1000, minY: -1000, w: 2000, h: 2000 };
     
-    // If just clicking (not dragging), use smooth pan
-    if (!isDragging) smoothPan(newX, newY); 
-    else setViewport(newX, newY);
-  }
+    tables.forEach((t) => {
+      if (t.x < minX) minX = t.x;
+      if (t.y < minY) minY = t.y;
+      if (t.x + TABLE_W_ESTIMATE > maxX) maxX = t.x + TABLE_W_ESTIMATE;
+      if (t.y + TABLE_H_ESTIMATE > maxY) maxY = t.y + TABLE_H_ESTIMATE;
+    });
+
+    // B. Include Current Viewport (Camera)
+    // Convert Screen Coords to World Coords: World = (Screen - Viewport) / Scale
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+    
+    const camWorldX = -viewport.x / viewport.scale;
+    const camWorldY = -viewport.y / viewport.scale;
+    const camWorldW = screenW / viewport.scale;
+    const camWorldH = screenH / viewport.scale;
+
+    minX = Math.min(minX, camWorldX);
+    minY = Math.min(minY, camWorldY);
+    maxX = Math.max(maxX, camWorldX + camWorldW);
+    maxY = Math.max(maxY, camWorldY + camWorldH);
+
+    // C. Add Padding
+    const PADDING = 1000;
+    minX -= PADDING;
+    minY -= PADDING;
+    maxX += PADDING;
+    maxY += PADDING;
+
+    return { minX, minY, w: maxX - minX, h: maxY - minY };
+  };
+
+  const bounds = getBounds();
+
+  // 2. Calculate Scale Factor to fit World into MiniMap
+  const scaleX = MAP_WIDTH / bounds.w;
+  const scaleY = MAP_HEIGHT / bounds.h;
+  const mapScale = Math.min(scaleX, scaleY); // fit contain
+
+  // Helper: World -> MiniMap px
+  const toMap = (val: number, isX: boolean) => {
+    const offset = isX ? bounds.minX : bounds.minY;
+    return (val - offset) * mapScale;
+  };
+
+  // 3. Interaction: Click/Drag to teleport
+  const handlePointer = (e: React.PointerEvent) => {
+    // Only left click
+    if (e.buttons !== 1) return;
+    
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    // Convert MiniMap px -> World Coords
+    // (click / scale) + offset = world
+    const worldX = (clickX / mapScale) + bounds.minX;
+    const worldY = (clickY / mapScale) + bounds.minY;
+
+    // Center the viewport on this spot
+    // Viewport = ScreenCenter - (World * Scale)
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+    
+    const newVx = (screenW / 2) - (worldX * viewport.scale);
+    const newVy = (screenH / 2) - (worldY * viewport.scale);
+
+    setViewport(newVx, newVy);
+  };
 
   return (
-    <div
-      ref={mapRef}
-      className="w-full h-full bg-[#121215] cursor-crosshair relative"
-      onMouseDown={() => setIsDragging(true)}
-      onMouseMove={(e) => isDragging && handleMove(e.clientX, e.clientY)}
-      onMouseUp={() => setIsDragging(false)}
-      onMouseLeave={() => setIsDragging(false)}
-      onClick={(e) => !isDragging && handleMove(e.clientX, e.clientY)}
+    <div 
+      ref={containerRef}
+      className="relative w-full h-full bg-[#09090b] cursor-crosshair select-none"
+      onPointerDown={handlePointer}
+      onPointerMove={handlePointer}
     >
-      <svg width="100%" height="100%" viewBox={`0 0 ${MAP} ${MAP}`}>
-        {/* Render Tables as small dots */}
-        {tables.map((t) => (
-          <rect
-            key={t.id}
-            x={t.x * SCALE}
-            y={t.y * SCALE}
-            width={80 * SCALE}
-            height={60 * SCALE}
-            fill="#8b5cf6" // Violet-500
-            opacity={0.6}
-            rx={2}
-          />
-        ))}
-
-        {/* Viewport Viewfinder */}
-        <rect
-          x={viewX}
-          y={viewY}
-          width={viewW}
-          height={viewH}
-          stroke="#fff"
-          strokeWidth="1.5"
-          fill="rgba(255,255,255,0.05)"
-          rx={2}
+      {/* 4. Render Tables (Little Blocks) */}
+      {tables.map((t) => (
+        <div
+          key={t.id}
+          className="absolute bg-zinc-600/50 border border-zinc-500/30 rounded-[1px]"
+          style={{
+            left: toMap(t.x, true),
+            top: toMap(t.y, false),
+            width: Math.max(4, TABLE_W_ESTIMATE * mapScale), // ensure at least 4px visible
+            height: Math.max(3, TABLE_H_ESTIMATE * mapScale),
+          }}
         />
-      </svg>
+      ))}
+
+      {/* 5. Render Viewport (The Glowing Lens) */}
+      <div
+        className="absolute border-2 border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)] rounded-sm pointer-events-none transition-transform duration-75"
+        style={{
+          left: toMap(-viewport.x / viewport.scale, true),
+          top: toMap(-viewport.y / viewport.scale, false),
+          width: (window.innerWidth / viewport.scale) * mapScale,
+          height: (window.innerHeight / viewport.scale) * mapScale,
+        }}
+      />
     </div>
   );
 }

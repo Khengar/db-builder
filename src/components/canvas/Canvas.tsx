@@ -1,6 +1,18 @@
+import { useState, useEffect, useMemo } from "react";
 import { useDBStore } from "../../store/dbStore";
 import TableNode from "../nodes/TableNode";
 import { barPath, crowFootPath } from "../../utils/arrow";
+
+// Helper hook to track window resizing for culling calculations
+function useWindowSize() {
+  const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const handleResize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  return size;
+}
 
 export default function Canvas() {
   const tables = useDBStore((s) => s.tables);
@@ -9,9 +21,39 @@ export default function Canvas() {
   const selectRelation = useDBStore((s) => s.selectRelation);
   const viewport = useDBStore((s) => s.viewport);
 
+  const { width: windowW, height: windowH } = useWindowSize();
+
   const TABLE_WIDTH = 260;
   const HEADER = 42;
   const ROW = 32;
+
+  // --- 1. CULLING LOGIC (Virtual Infinity) ---
+  const visibleTables = useMemo(() => {
+    // Define a "Buffer" (in pixels) so tables don't pop in abruptly
+    const BUFFER = 600;
+
+    // Calculate the "World" bounds that are currently visible on screen
+    // Math: (ScreenCoord - ViewportOffset) / Scale = WorldCoord
+    const minVisibleX = -viewport.x / viewport.scale - BUFFER;
+    const minVisibleY = -viewport.y / viewport.scale - BUFFER;
+    
+    const maxVisibleX = (windowW - viewport.x) / viewport.scale + BUFFER;
+    const maxVisibleY = (windowH - viewport.y) / viewport.scale + BUFFER;
+
+    return tables.filter((t) => {
+      // Estimate table height based on columns (header + rows + padding)
+      const tableHeight = HEADER + (t.columns.length * ROW) + 50; 
+
+      // Check if the table overlaps with the visible world rectangle
+      const isVisible =
+        t.x + TABLE_WIDTH > minVisibleX &&
+        t.x < maxVisibleX &&
+        t.y + tableHeight > minVisibleY &&
+        t.y < maxVisibleY;
+
+      return isVisible;
+    });
+  }, [tables, viewport, windowW, windowH]);
 
   const getColumnY = (table: any, index: number) =>
     table.y + HEADER + index * ROW + ROW / 2;
@@ -31,15 +73,20 @@ export default function Canvas() {
           selectRelation(null);
         }}
       >
-        {/* RELATIONS */}
+        {/* RELATIONS LAYER */}
+        {/* FIX: Removed fixed width/height/viewBox. Used overflow: visible */}
         <svg
-          width="20000"
-          height="20000"
-          viewBox="0 0 20000 20000"
-          className="absolute inset-0"
-          style={{ zIndex: 50, overflow: "visible" }}
+          className="absolute top-0 left-0 pointer-events-none"
+          style={{ 
+            width: 0, 
+            height: 0, 
+            overflow: "visible", 
+            zIndex: 50 
+          }}
         >
           {relations.map((rel) => {
+            // Note: We search 'tables' (full list), not 'visibleTables', 
+            // so lines still draw even if one end is off-screen.
             const tA = tables.find((t) => t.id === rel.from.tableId);
             const tB = tables.find((t) => t.id === rel.to.tableId);
             if (!tA || !tB) return null;
@@ -57,16 +104,12 @@ export default function Canvas() {
             const cy2 = B.y;
 
             const d = `M ${A.x} ${A.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${B.x} ${B.y}`;
-
             const startAngle = Math.atan2(cy1 - A.y, cx1 - A.x);
             const endAngle = Math.atan2(B.y - cy2, B.x - cx2);
 
-            const startSymbol =
-              rel.cardinality === "many-to-many" ? "crow" : "bar";
-
+            const startSymbol = rel.cardinality === "many-to-many" ? "crow" : "bar";
             const endSymbol =
-              rel.cardinality === "many-to-many" ||
-              rel.cardinality === "one-to-many"
+              rel.cardinality === "many-to-many" || rel.cardinality === "one-to-many"
                 ? "crow"
                 : "bar";
 
@@ -74,7 +117,16 @@ export default function Canvas() {
             const strokeWidth = selectedRelationId === rel.id ? 4 : 3;
 
             return (
-              <g key={rel.id}>
+              <g key={rel.id} className="pointer-events-auto cursor-pointer">
+                {/* Invisible wide stroke for easier clicking */}
+                <path d={d} stroke="transparent" strokeWidth={20} fill="none" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectRelation(rel.id);
+                  }}
+                />
+                
+                {/* Actual Line */}
                 <path
                   d={d}
                   stroke={stroke}
@@ -88,22 +140,14 @@ export default function Canvas() {
                 />
 
                 <path
-                  d={
-                    startSymbol === "crow"
-                      ? crowFootPath(A.x, A.y, startAngle)
-                      : barPath(A.x, A.y, startAngle)
-                  }
+                  d={startSymbol === "crow" ? crowFootPath(A.x, A.y, startAngle) : barPath(A.x, A.y, startAngle)}
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   fill="none"
                 />
 
                 <path
-                  d={
-                    endSymbol === "crow"
-                      ? crowFootPath(B.x, B.y, endAngle)
-                      : barPath(B.x, B.y, endAngle)
-                  }
+                  d={endSymbol === "crow" ? crowFootPath(B.x, B.y, endAngle) : barPath(B.x, B.y, endAngle)}
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   fill="none"
@@ -113,12 +157,13 @@ export default function Canvas() {
           })}
         </svg>
 
-        {/* TABLES */}
+        {/* TABLES LAYER */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{ zIndex: 100 }}
         >
-          {tables.map((t) => (
+          {/* ONLY Render Visible Tables */}
+          {visibleTables.map((t) => (
             <TableNode key={t.id} table={t} />
           ))}
         </div>

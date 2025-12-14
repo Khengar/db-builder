@@ -6,8 +6,7 @@ import { toPng } from "html-to-image";
  */
 export async function exportDiagramPNG() {
   const tables = Array.from(document.querySelectorAll(".table-node")) as HTMLElement[];
-  const canvas = document.querySelector("#diagram-canvas") as HTMLElement;
-
+  const canvas = document.querySelector("#diagram-root") as HTMLElement;
   if (!canvas || tables.length === 0) {
     alert("Nothing to export.");
     return;
