@@ -248,7 +248,7 @@ export function generateSQL(tables: DBTable[], relations: Relation[]): string {
   }
   lines.push("");
 
-  // ===================================================================
+  // ======================`=============================================
   // 5. COMMIT CONSTRAINTS & INDICES
   // ===================================================================
   if (fkStatements.length > 0) {

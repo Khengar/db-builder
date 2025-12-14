@@ -3,7 +3,7 @@ import Prism from "prismjs";
 // Switch to a dark theme for Prism
 import "prismjs/themes/prism-tomorrow.css"; 
 import "prismjs/components/prism-sql";  
-import { generateSQL } from "../lib/sqlgenerator";
+import { generateSQL } from "../lib/sqlGenerator";
 import { useDBStore } from "../store/dbStore";
 import { Copy, Download, X, Code2 } from "lucide-react";
 

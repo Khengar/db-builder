@@ -33,8 +33,9 @@ export interface Relation {
   from: { tableId: string; columnId: string };
   to: { tableId: string; columnId: string };
   cardinality?: RelationCardinality; // new
-  deleteRule?: "cascade" | "set-null" | "restrict";
-  updateRule?: "cascade" | "restrict";
+  deleteRule?: "cascade" | "restrict" | "set-null";
+  updateRule?: "cascade" | "restrict" | "set-null";
+  isOneToManyReversed?: boolean;
 }
 
 interface Viewport {
@@ -103,9 +104,8 @@ interface DBState {
   undo: () => void;
   redo: () => void;
   recordHistory: () => void;
-
-  sqlDrawerOpen: false,
-
+  sqlDrawerOpen: boolean;
+  setSQLDrawerOpen: (open: boolean) => void;
 }
 
 function toSnake(s: string) {
@@ -122,9 +122,6 @@ function fkNameFor(refTableName: string, refColumnName: string) {
   // common convention: table_column (snake_case)
   return `${toSnake(refTableName)}_${toSnake(refColumnName)}`;
 }
-
-const GRID = 20;
-const snap = (value: number) => Math.round(value / GRID) * GRID;
 
 function smoothPan(targetX: number, targetY: number) {
   const store = useDBStore.getState();
@@ -266,17 +263,17 @@ export const useDBStore = create<DBState>((set, get) => {
         tables: state.tables.map((t) =>
           t.id === tableId
             ? {
-                ...t,
-                columns: [
-                  ...t.columns,
-                  {
-                    id: uuid(),
-                    name: "column_" + (t.columns.length + 1),
-                    type: "text",
-                    isNullable: true,
-                  },
-                ],
-              }
+              ...t,
+              columns: [
+                ...t.columns,
+                {
+                  id: uuid(),
+                  name: "column_" + (t.columns.length + 1),
+                  type: "text",
+                  isNullable: true,
+                },
+              ],
+            }
             : t
         ),
       }));
@@ -421,14 +418,15 @@ export const useDBStore = create<DBState>((set, get) => {
           from: parentEndpoint,
           to: childEndpoint,
           cardinality: "one-to-many" as RelationCardinality,
-          deleteRule: "restrict",
-          updateRule: "cascade",
+          deleteRule: "cascade" as "cascade" | "set-null" | "restrict" | undefined,
+          updateRule: "cascade" as "cascade" | "set-null" | "restrict" | undefined,
         };
 
         return {
           ...state,
           tables: updatedTables,
-          relations: [...state.relations, newRelation],
+          relations: [...state.relations,
+            newRelation],
           activeLink: null,
         };
       });
@@ -459,11 +457,11 @@ export const useDBStore = create<DBState>((set, get) => {
         tables: state.tables.map((t) =>
           t.id === tableId
             ? {
-                ...t,
-                columns: t.columns.map((c) =>
-                  c.id === columnId ? { ...c, [flag]: !c[flag] } : c
-                ),
-              }
+              ...t,
+              columns: t.columns.map((c) =>
+                c.id === columnId ? { ...c, [flag]: !c[flag] } : c
+              ),
+            }
             : t
         ),
       }));
@@ -492,7 +490,6 @@ export const useDBStore = create<DBState>((set, get) => {
           relation.to = tmp;
         }
 
-        const oldCard = relation.cardinality;
         relation.cardinality = cardinality;
 
         // update relations array
@@ -738,7 +735,8 @@ export const useDBStore = create<DBState>((set, get) => {
           selectedRelationId: null,
         };
       }),
-      setSQLDrawerOpen: (open: boolean) => set({ sqlDrawerOpen: open }),
+    setSQLDrawerOpen: (open: boolean) => set({ sqlDrawerOpen: open }),
+    sqlDrawerOpen: false,
   };
 });
 

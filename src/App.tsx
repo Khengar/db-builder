@@ -4,7 +4,7 @@ import "./index.css";
 // Components
 import Canvas from "./components/canvas/Canvas";
 import MiniMap from "./components/Minimap";
-import SQLDrawer from "./components/SqlDrawer";
+import SQLDrawer from "./components/SQLDrawer";
 import SnipOverlay from "./components/SnipOverlay";
 
 // Store & Lib
@@ -12,20 +12,17 @@ import { useDBStore } from "./store/dbStore";
 import { saveProject, importProject } from "./lib/projectIO";
 
 // Icons for the Figma/Miro look
-import { 
-  Plus, 
-  Trash2, 
-  Database, 
-  Camera, 
-  Save, 
-  FolderOpen, 
-  Undo2, 
-  Redo2, 
-  MousePointer2,
+import {
+  Plus,
+  Trash2,
+  Database,
+  Camera,
+  Save,
+  FolderOpen,
+  Undo2,
+  Redo2,
   Settings2,
-  X,
   Share2,
-  Check
 } from "lucide-react";
 
 function App() {
@@ -44,7 +41,7 @@ function App() {
 
   const undo = useDBStore((s) => s.undo);
   const redo = useDBStore((s) => s.redo);
-  
+
   const [snipOpen, setSnipOpen] = useState(false);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -61,7 +58,7 @@ function App() {
       // Undo/Redo
       if (e.ctrlKey && e.key === "z") undo();
       if (e.ctrlKey && e.key === "y") redo();
-      if (e.ctrlKey && e.key === "Shift" && e.key === "Z") redo();
+      if (e.shiftKey && e.key.toLowerCase() === "z") redo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -125,7 +122,7 @@ function App() {
 
   return (
     <div className="w-full h-screen overflow-hidden bg-[#09090b] text-zinc-100 font-sans selection:bg-violet-500/30 relative flex flex-col">
-      
+
       {/* ---------------------- 1. MAIN CANVAS AREA ----------------------- */}
       <main
         className="absolute inset-0 z-0 overflow-hidden cursor-grab active:cursor-grabbing"
@@ -168,12 +165,12 @@ function App() {
         {/* File Actions */}
         <div className="flex items-center gap-1 p-1 bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-xl shadow-xl">
           <ControlButton onClick={saveProject} icon={<Save size={16} />} tooltip="Save Project" />
-          
+
           <label className="cursor-pointer">
             <input type="file" accept=".dbb" className="hidden" onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) await importProject(file);
-              }} 
+              const file = e.target.files?.[0];
+              if (file) await importProject(file);
+            }}
             />
             <div className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-all">
               <FolderOpen size={16} />
@@ -186,15 +183,15 @@ function App() {
 
       {/* --- TOP RIGHT: Inspector / Properties Panel --- */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-3 items-end">
-        
+
         {/* 1. Global DB Settings (Always Visible) */}
         <div className="px-3 py-2 bg-zinc-900/80 backdrop-blur-md border border-white/10 hover:border-white/20 hover:bg-white/5 rounded-xl shadow-xl flex items-center gap-2 transition-all duration-200 group">
-           <Settings2 size={14} className="text-zinc-600 group-hover:text-zinc-500 transition-colors" />
-           <select className="bg-transparent border-none outline-none text-xs font-medium text-zinc-400 group-hover:text-zinc-300 cursor-pointer transition-colors">
-              <option className="bg-zinc-900 text-zinc-400">PostgreSQL</option>
-              <option className="bg-zinc-900 text-zinc-400">MySQL</option>
-              <option className="bg-zinc-900 text-zinc-400">SQLite</option>
-            </select>
+          <Settings2 size={14} className="text-zinc-600 group-hover:text-zinc-500 transition-colors" />
+          <select className="bg-transparent border-none outline-none text-xs font-medium text-zinc-400 group-hover:text-zinc-300 cursor-pointer transition-colors">
+            <option className="bg-zinc-900 text-zinc-400">PostgreSQL</option>
+            <option className="bg-zinc-900 text-zinc-400">MySQL</option>
+            <option className="bg-zinc-900 text-zinc-400">SQLite</option>
+          </select>
         </div>
 
         {/* 2. Contextual Editor: Only shows when a RELATION is selected */}
@@ -206,30 +203,30 @@ function App() {
                 <Trash2 size={14} />
               </button>
             </div>
-            
+
             <div className="p-4 space-y-4">
               <div className="space-y-2">
                 <label className="text-[10px] uppercase text-zinc-500 font-bold">Cardinality</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <CardinalityBtn 
-                    label="1 — 1" 
-                    active={selectedRelation.cardinality === "one-to-one"} 
-                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-one", false)} 
+                  <CardinalityBtn
+                    label="1 — 1"
+                    active={selectedRelation.cardinality === "one-to-one"}
+                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-one", false)}
                   />
-                  <CardinalityBtn 
-                    label="1 — N" 
-                    active={selectedRelation.cardinality === "one-to-many" && !selectedRelation.isOneToManyReversed} 
-                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-many", false)} 
+                  <CardinalityBtn
+                    label="1 — N"
+                    active={selectedRelation.cardinality === "one-to-many" && !selectedRelation.isOneToManyReversed}
+                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-many", false)}
                   />
-                  <CardinalityBtn 
-                    label="N — 1" 
-                    active={selectedRelation.cardinality === "one-to-many" && selectedRelation.isOneToManyReversed} 
-                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-many", true)} 
+                  <CardinalityBtn
+                    label="N — 1"
+                    active={selectedRelation.cardinality === "one-to-many" && (selectedRelation.isOneToManyReversed || false)}
+                    onClick={() => updateRelationCardinality(selectedRelationId, "one-to-many", true)}
                   />
-                  <CardinalityBtn 
-                    label="N — N" 
-                    active={selectedRelation.cardinality === "many-to-many"} 
-                    onClick={() => updateRelationCardinality(selectedRelationId, "many-to-many", false)} 
+                  <CardinalityBtn
+                    label="N — N"
+                    active={selectedRelation.cardinality === "many-to-many"}
+                    onClick={() => updateRelationCardinality(selectedRelationId, "many-to-many", false)}
                   />
                 </div>
               </div>
@@ -242,42 +239,42 @@ function App() {
       {!snipOpen && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 p-2 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl ring-1 ring-black/50">
-            
-            <DockButton 
-              onClick={() => addTable()} 
-              icon={<Plus size={20} />} 
-              label="Add Table" 
+
+            <DockButton
+              onClick={() => addTable()}
+              icon={<Plus size={20} />}
+              label="Add Table"
               hotkey="T"
             />
-            
+
             <div className="w-px h-8 bg-white/10 mx-1"></div>
 
-            <DockButton 
-              onClick={undo} 
-              icon={<Undo2 size={18} />} 
-              label="Undo" 
+            <DockButton
+              onClick={undo}
+              icon={<Undo2 size={18} />}
+              label="Undo"
               hotkey="Ctrl+Z"
             />
-             <DockButton 
-              onClick={redo} 
-              icon={<Redo2 size={18} />} 
-              label="Redo" 
+            <DockButton
+              onClick={redo}
+              icon={<Redo2 size={18} />}
+              label="Redo"
               hotkey="Ctrl+Y"
             />
 
             <div className="w-px h-8 bg-white/10 mx-1"></div>
 
-            <DockButton 
-              onClick={() => deleteSelected()} 
-              icon={<Trash2 size={18} />} 
-              label="Delete" 
+            <DockButton
+              onClick={() => deleteSelected()}
+              icon={<Trash2 size={18} />}
+              label="Delete"
               disabled={selected.length === 0}
               danger
             />
 
             <div className="w-px h-8 bg-white/10 mx-1"></div>
 
-            <button 
+            <button
               onClick={() => useDBStore.getState().setSQLDrawerOpen(true)}
               className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-medium transition-colors shadow-lg shadow-violet-900/20 flex items-center gap-2"
             >
@@ -293,27 +290,27 @@ function App() {
         <div className="absolute bottom-8 right-8 z-40 flex flex-col items-end gap-4 pointer-events-none">
           {/* MiniMap Container - Pointer events allowed inside */}
           <div className="pointer-events-auto rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-zinc-900/90 w-48 h-32">
-             <MiniMap />
+            <MiniMap />
           </div>
 
           {/* Zoom Controls */}
           <div className="pointer-events-auto flex items-center gap-3 px-3 py-2 bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-full shadow-xl">
-             <span className="text-xs font-mono text-zinc-400 w-12 text-center">
-                {Math.round(viewport.scale * 100)}%
-             </span>
-             <input
-                type="range"
-                min="0.2"
-                max="4"
-                step="0.01"
-                value={viewport.scale}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  const rect = document.body.getBoundingClientRect();
-                  useDBStore.getState().setScale(val, rect.width / 2, rect.height / 2);
-                }}
-                className="w-24 accent-violet-500 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-              />
+            <span className="text-xs font-mono text-zinc-400 w-12 text-center">
+              {Math.round(viewport.scale * 100)}%
+            </span>
+            <input
+              type="range"
+              min="0.2"
+              max="4"
+              step="0.01"
+              value={viewport.scale}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                const rect = document.body.getBoundingClientRect();
+                useDBStore.getState().setScale(val, rect.width / 2, rect.height / 2);
+              }}
+              className="w-24 accent-violet-500 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+            />
           </div>
         </div>
       )}
@@ -321,7 +318,7 @@ function App() {
       {/* --- OVERLAYS --- */}
       {snipOpen && <SnipOverlay onClose={() => setSnipOpen(false)} />}
       <SQLDrawer />
-      
+
     </div>
   );
 }
@@ -329,8 +326,8 @@ function App() {
 // --- SUB-COMPONENTS for the UI ---
 
 const ControlButton = ({ onClick, icon, tooltip }: { onClick: () => void, icon: any, tooltip: string }) => (
-  <button 
-    onClick={onClick} 
+  <button
+    onClick={onClick}
     title={tooltip}
     className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
   >
@@ -339,7 +336,7 @@ const ControlButton = ({ onClick, icon, tooltip }: { onClick: () => void, icon: 
 );
 
 const DockButton = ({ onClick, icon, label, hotkey, disabled, danger }: any) => (
-  <button 
+  <button
     onClick={onClick}
     disabled={disabled}
     className={`
@@ -351,7 +348,7 @@ const DockButton = ({ onClick, icon, label, hotkey, disabled, danger }: any) => 
     <div className={`text-zinc-400 ${!disabled && (danger ? 'group-hover:text-red-400' : 'group-hover:text-violet-300')}`}>
       {icon}
     </div>
-    
+
     {/* Tooltip */}
     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
       {label} {hotkey && <span className="opacity-50 ml-1">({hotkey})</span>}
@@ -364,8 +361,8 @@ const CardinalityBtn = ({ label, active, onClick }: { label: string, active: boo
     onClick={onClick}
     className={`
       px-3 py-2 text-xs font-medium rounded-lg border transition-all
-      ${active 
-        ? 'bg-violet-500/20 border-violet-500 text-violet-200' 
+      ${active
+        ? 'bg-violet-500/20 border-violet-500 text-violet-200'
         : 'bg-zinc-800 border-transparent text-zinc-400 hover:bg-zinc-700 hover:text-white'
       }
     `}
