@@ -1,204 +1,125 @@
 import { useDBStore } from "../../store/dbStore";
 import TableNode from "../nodes/TableNode";
+import { barPath, crowFootPath } from "../../utils/arrow";
 
 export default function Canvas() {
   const tables = useDBStore((s) => s.tables);
   const relations = useDBStore((s) => s.relations);
   const selectedRelationId = useDBStore((s) => s.selectedRelationId);
   const selectRelation = useDBStore((s) => s.selectRelation);
-
   const viewport = useDBStore((s) => s.viewport);
 
   const TABLE_WIDTH = 260;
   const HEADER = 42;
   const ROW = 32;
 
-  const getColumnY = (table: any, index: number) => {
-    return table.y + HEADER + index * ROW + ROW / 2;
-  };
+  const getColumnY = (table: any, index: number) =>
+    table.y + HEADER + index * ROW + ROW / 2;
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      {/* 
-      ============================================
-      PAN + ZOOM WORLD
-      Everything inside here shares same transform
-      ============================================
-      */}
       <div
+        id="diagram-root"
         className="absolute inset-0"
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
           transformOrigin: "0 0",
         }}
         onClick={(e) => {
-          const target = e.target as HTMLElement;
-
-          // Do NOT clear if clicking on a path (relation)
-          if (target.closest("path")) return;
-
-          // Do NOT clear when clicking table-node (its children have pointer-events auto)
-          if (target.closest(".table-node")) return;
-
-          // Otherwise clear selection
+          const t = e.target as HTMLElement;
+          if (t.closest("path") || t.closest(".table-node")) return;
           selectRelation(null);
         }}
       >
-        {/* 
-        ================================
-        SVG RELATION LINES — behind tables
-        ================================
-        */}
+        {/* RELATIONS */}
         <svg
+          width="20000"
+          height="20000"
+          viewBox="0 0 20000 20000"
           className="absolute inset-0"
-          style={{
-            zIndex: 50,
-            overflow: "visible",
-            pointerEvents: "auto",
-          }}
+          style={{ zIndex: 50, overflow: "visible" }}
         >
-          <defs>
-            {/* One-to-one bar */}
-            <marker
-              id="marker-bar"
-              viewBox="0 0 10 20"
-              markerWidth="8"
-              markerHeight="20"
-              refX="10"
-              refY="10"
-              markerUnits="userSpaceOnUse"
-              orient="auto"
-            >
-              <line
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="20"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-            </marker>
-
-            {/* Crow-foot (many) */}
-            <marker
-              id="marker-crow"
-              viewBox="0 0 20 20"
-              markerWidth="12"
-              markerHeight="20"
-              refX="20"
-              refY="10"
-              markerUnits="userSpaceOnUse"
-              orient="auto"
-            >
-              {/* <!-- crow foot branches --> */}
-              <line
-                x1="20"
-                y1="10"
-                x2="0"
-                y2="0"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <line
-                x1="20"
-                y1="10"
-                x2="0"
-                y2="20"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-
-              {/* <!-- optional vertical bar for modern crowfoot --> */}
-              <line
-                x1="20"
-                y1="0"
-                x2="20"
-                y2="20"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </marker>
-          </defs>
           {relations.map((rel) => {
             const tA = tables.find((t) => t.id === rel.from.tableId);
             const tB = tables.find((t) => t.id === rel.to.tableId);
             if (!tA || !tB) return null;
 
-            const idxA = tA.columns.findIndex((c) => c.id === rel.from.columnId);
-            const idxB = tB.columns.findIndex((c) => c.id === rel.to.columnId);
-            if (idxA === -1 || idxB === -1) return null;
+            const iA = tA.columns.findIndex((c) => c.id === rel.from.columnId);
+            const iB = tB.columns.findIndex((c) => c.id === rel.to.columnId);
+            if (iA === -1 || iB === -1) return null;
 
-            const A = {
-              x: tA.x + TABLE_WIDTH,
-              y: getColumnY(tA, idxA),
-            };
-
-            const B = {
-              x: tB.x,
-              y: getColumnY(tB, idxB),
-            };
+            const A = { x: tA.x + TABLE_WIDTH, y: getColumnY(tA, iA) };
+            const B = { x: tB.x, y: getColumnY(tB, iB) };
 
             const cx1 = A.x + (B.x - A.x) * 0.25;
             const cy1 = A.y;
             const cx2 = B.x - (B.x - A.x) * 0.25;
             const cy2 = B.y;
 
+            const d = `M ${A.x} ${A.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${B.x} ${B.y}`;
+
+            const startAngle = Math.atan2(cy1 - A.y, cx1 - A.x);
+            const endAngle = Math.atan2(B.y - cy2, B.x - cx2);
+
+            const startSymbol =
+              rel.cardinality === "many-to-many" ? "crow" : "bar";
+
+            const endSymbol =
+              rel.cardinality === "many-to-many" ||
+              rel.cardinality === "one-to-many"
+                ? "crow"
+                : "bar";
+
+            const stroke = "#3b82f6";
+            const strokeWidth = selectedRelationId === rel.id ? 4 : 3;
+
             return (
               <g key={rel.id}>
                 <path
-                  d={`M ${A.x} ${A.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${B.x} ${B.y}`}
-                  stroke="currentColor"
-                  color={selectedRelationId === rel.id ? "#3b82f6" : "#3b82f6"} // blue line + blue markers
-                  strokeWidth={selectedRelationId === rel.id ? 4 : 3}
+                  d={d}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
                   fill="none"
                   strokeLinecap="round"
-                  style={{ cursor: "pointer", pointerEvents: "auto" }}
                   onClick={(e) => {
                     e.stopPropagation();
                     selectRelation(rel.id);
                   }}
+                />
 
-                  /* CARDINALITY MARKERS */
-                  markerStart={
-                    rel.cardinality === "one-to-one"
-                      ? "url(#marker-bar)"
-                      : rel.cardinality === "one-to-many"
-                        ? "url(#marker-bar)"   // 1—N: bar on the '1' side
-                        : rel.cardinality === "many-to-many"
-                          ? "url(#marker-crow)"
-                          : undefined
+                <path
+                  d={
+                    startSymbol === "crow"
+                      ? crowFootPath(A.x, A.y, startAngle)
+                      : barPath(A.x, A.y, startAngle)
                   }
-                  markerEnd={
-                    rel.cardinality === "one-to-one"
-                      ? "url(#marker-bar)"
-                      : rel.cardinality === "one-to-many"
-                        ? "url(#marker-crow)"  // crow-foot on the 'N' side
-                        : rel.cardinality === "many-to-many"
-                          ? "url(#marker-crow)"
-                          : undefined
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  fill="none"
+                />
+
+                <path
+                  d={
+                    endSymbol === "crow"
+                      ? crowFootPath(B.x, B.y, endAngle)
+                      : barPath(B.x, B.y, endAngle)
                   }
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  fill="none"
                 />
               </g>
             );
           })}
         </svg>
 
-        {/* 
-        ================================
-        TABLES — always above SVG lines
-        pointer-events none here allows SVG clicks through
-        table-node inner elements re-enable pointer-events
-        ================================
-        */}
+        {/* TABLES */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{ zIndex: 100 }}
         >
-          {tables.map((table) => (
-            <TableNode key={table.id} table={table} />
+          {tables.map((t) => (
+            <TableNode key={t.id} table={t} />
           ))}
         </div>
       </div>
