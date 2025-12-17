@@ -8,14 +8,16 @@ export default function MiniMap() {
   
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Constants for rendering
-  const MAP_WIDTH = 192; // matches w-48 (48 * 4)
-  const MAP_HEIGHT = 128; // matches h-32 (32 * 4)
+  // --- UPDATED CONSTANTS (Matches w-80 h-56) ---
+  // w-80 = 20rem = 320px
+  // h-56 = 14rem = 224px
+  const MAP_WIDTH = 320; 
+  const MAP_HEIGHT = 224; 
+  
   const TABLE_W_ESTIMATE = 200;
   const TABLE_H_ESTIMATE = 150;
 
   // 1. Calculate the "Bounding Box" of the entire world
-  // We include both the tables AND the current viewport so the user never gets lost.
   const getBounds = () => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
@@ -30,7 +32,6 @@ export default function MiniMap() {
     });
 
     // B. Include Current Viewport (Camera)
-    // Convert Screen Coords to World Coords: World = (Screen - Viewport) / Scale
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
     
@@ -79,12 +80,10 @@ export default function MiniMap() {
     const clickY = e.clientY - rect.top;
 
     // Convert MiniMap px -> World Coords
-    // (click / scale) + offset = world
     const worldX = (clickX / mapScale) + bounds.minX;
     const worldY = (clickY / mapScale) + bounds.minY;
 
     // Center the viewport on this spot
-    // Viewport = ScreenCenter - (World * Scale)
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
     
@@ -109,7 +108,7 @@ export default function MiniMap() {
           style={{
             left: toMap(t.x, true),
             top: toMap(t.y, false),
-            width: Math.max(4, TABLE_W_ESTIMATE * mapScale), // ensure at least 4px visible
+            width: Math.max(4, TABLE_W_ESTIMATE * mapScale), 
             height: Math.max(3, TABLE_H_ESTIMATE * mapScale),
           }}
         />

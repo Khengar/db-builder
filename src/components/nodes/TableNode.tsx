@@ -17,7 +17,6 @@ export default function TableNode({ table }: Props) {
   const removeTable = useDBStore((s) => s.removeTable);
   const toggleColumnFlag = useDBStore((s) => s.toggleColumnFlag);
   
-  // Selection
   const selectTable = useDBStore((s) => s.selectTable);
   const selected = useDBStore((s) => s.selected);
   const isSelected = selected.includes(table.id);
@@ -26,23 +25,34 @@ export default function TableNode({ table }: Props) {
   const snap = (value: number) => Math.round(value / GRID) * GRID;
   const nodeRef = useRef<HTMLDivElement | null>(null);
 
-  // Title Editing
+  // --- RENAMING STATE ---
   const [editing, setEditing] = useState(false);
   const [tempName, setTempName] = useState(table.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  
+  // FIX 1: Manual Click Timer Ref
+  const lastClickTime = useRef<number>(0);
 
   const startEditing = () => {
     setEditing(true);
     setTempName(table.name);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setTimeout(() => {
+        if(inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select(); 
+        }
+    }, 0);
   };
 
   const finishEditing = () => {
+    if (tempName.trim()) {
+        renameTable(table.id, tempName.trim());
+    } else {
+        setTempName(table.name); 
+    }
     setEditing(false);
-    renameTable(table.id, tempName.trim() || "table");
   };
 
-  // 1. STOP PROPAGATION on click so we select the table but don't drag the canvas
   const onAnyPointerDown = (e: React.PointerEvent) => {
     const additive = e.shiftKey;
     selectTable(table.id, additive);
@@ -50,16 +60,21 @@ export default function TableNode({ table }: Props) {
 
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (editing) return;
+
+    // FIX 2: Manual Double Click Detection
+    // If you click twice within 300ms, we force Edit Mode and STOP dragging.
+    const now = Date.now();
+    if (now - lastClickTime.current < 300) {
+        startEditing();
+        return; 
+    }
+    lastClickTime.current = now; // Save this click time
     
     const target = e.target as HTMLElement;
-    // Prevent dragging if clicking inputs/selects
-    if (target.closest("input,select,button,textarea")) {
-        return;
-    }
+    if (target.closest("input,select,button,textarea")) return;
 
-    // 2. ONLY Drag if we are clicking the header/body background
+    // Start Dragging
     useDBStore.getState().recordHistory();
-    
     const startX = e.clientX;
     const startY = e.clientY;
     const initialX = table.x;
@@ -102,32 +117,39 @@ export default function TableNode({ table }: Props) {
       <div 
         className="h-10 bg-zinc-900/50 border-b border-white/5 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing group"
         onPointerDown={onBodyPointerDown}
+        // Removed standard onDoubleClick because your browser ignores it
       >
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div className="p-1 rounded bg-gradient-to-br from-violet-600 to-indigo-600">
+        <div className="flex items-center gap-2 overflow-hidden w-full">
+          <div className="p-1 rounded bg-gradient-to-br from-violet-600 to-indigo-600 shrink-0">
              <div className="w-2 h-2 bg-white rounded-full opacity-80" />
           </div>
           
-          <div className="flex-1 min-w-0" onDoubleClick={startEditing}>
+          <div className="flex-1 min-w-0">
              {editing ? (
                <input
                  ref={inputRef}
+                 type="text"
                  value={tempName}
                  onChange={(e) => setTempName(e.target.value)}
                  onBlur={finishEditing}
-                 onKeyDown={(e) => e.key === "Enter" && finishEditing()}
-                 onPointerDown={(e) => e.stopPropagation()} 
+                 onKeyDown={(e) => {
+                    if (e.key === "Enter") finishEditing();
+                    if (e.key === "Escape") {
+                        setTempName(table.name);
+                        setEditing(false);
+                    }
+                 }}
+                 onPointerDown={(e) => e.stopPropagation()}
                  className="bg-black/50 text-white text-sm font-semibold w-full px-1 rounded outline-none border border-violet-500/50"
                />
              ) : (
-               <span className="text-sm font-semibold text-zinc-100 truncate block hover:text-white transition-colors">
+               <span className="text-sm font-semibold text-zinc-100 truncate block hover:text-white transition-colors select-none">
                  {table.name}
                </span>
              )}
           </div>
         </div>
 
-        {/* Delete Button */}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -135,7 +157,7 @@ export default function TableNode({ table }: Props) {
             removeTable(table.id);
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500/10 rounded text-zinc-500 hover:text-red-400"
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500/10 rounded text-zinc-500 hover:text-red-400 shrink-0 ml-2"
         >
           <X size={14} />
         </button>
@@ -148,7 +170,6 @@ export default function TableNode({ table }: Props) {
             key={col.id} 
             className="group flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 transition-colors relative"
           >
-            {/* Connection Port */}
             <button
               className="w-3 h-3 rounded-full border-2 border-zinc-600 bg-zinc-900 hover:border-violet-400 hover:bg-violet-400 transition-all flex-shrink-0"
               onClick={(e) => {
@@ -161,7 +182,6 @@ export default function TableNode({ table }: Props) {
               title="Connect Relation"
             />
 
-            {/* Column Name */}
             <input
               value={col.name}
               onChange={(e) => updateColumn(table.id, col.id, "name", e.target.value)}
@@ -170,7 +190,6 @@ export default function TableNode({ table }: Props) {
               onPointerDown={(e) => e.stopPropagation()} 
             />
 
-            {/* Column Type */}
             <select
               value={col.type}
               onChange={(e) => updateColumn(table.id, col.id, "type", e.target.value)}
@@ -185,7 +204,6 @@ export default function TableNode({ table }: Props) {
               <option className="bg-zinc-900 text-zinc-300" value="json">JSON</option>
             </select>
 
-            {/* Flags */}
             <div className="flex items-center gap-0.5" onPointerDown={(e) => e.stopPropagation()}>
                <button
                  onClick={() => toggleColumnFlag(table.id, col.id, "isPrimary")}
@@ -212,7 +230,6 @@ export default function TableNode({ table }: Props) {
                </button>
             </div>
 
-            {/* Remove Column */}
             <button 
               onClick={(e) => {
                 e.stopPropagation();
@@ -226,7 +243,6 @@ export default function TableNode({ table }: Props) {
           </div>
         ))}
 
-        {/* Add Column Action */}
         <button
           onClick={(e) => {
             e.stopPropagation();
