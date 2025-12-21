@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import "./index.css";
+import { Toaster, toast } from "sonner";
 
 // Icons
 import {
@@ -12,7 +13,8 @@ import {
   Undo2,
   Redo2,
   Share2,
-  Sparkles, // Only Sparkles needed now
+  Sparkles,
+  Wand2, // <--- Icon for Generate
 } from "lucide-react";
 
 // Components
@@ -20,11 +22,13 @@ import Canvas from "./components/canvas/Canvas";
 import MiniMap from "./components/Minimap";
 import SQLDrawer from "./components/SQLDrawer";
 import SnipOverlay from "./components/SnipOverlay";
+import GenerateModal from "./components/GenerateModel"; // <--- Import the new Modal
 
 // Store & Lib
 import { useDBStore } from "./store/dbStore";
 import { saveProject, importProject } from "./lib/projectIO";
 import { getLayoutedElements } from './utils/layout';
+import { ProjectCompiler } from "./lib/compiler";
 
 function App() {
   // --- STORE STATE ---
@@ -47,56 +51,46 @@ function App() {
 
   // --- LOCAL STATE ---
   const [snipOpen, setSnipOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false); // <--- State for AI Modal
   const mainRef = useRef<HTMLDivElement | null>(null);
 
   /* -------------------------------------------------------
-      TIDY / AUTO-LAYOUT LOGIC (ASYNC FIX)
+      TIDY / AUTO-LAYOUT LOGIC
      -------------------------------------------------------- */
   const handleTidyUp = async () => {
     const store = useDBStore.getState();
-    
-    // 1. Calculate positions (Await the math)
     const { nodes: layoutedNodes } = await getLayoutedElements(
       store.tables,
       store.relations
     );
-
-    // 2. Apply new positions to the store
     layoutedNodes.forEach((node: any) => {
       store.updateTablePosition(node.id, node.position.x, node.position.y);
     });
+    toast.success("Layout tidied up!");
   };
+
   /* -------------------------------------------------------
       KEYBOARD HANDLERS
      -------------------------------------------------------- */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
-
-      if (e.key === "Delete") {
-        e.preventDefault();
-        deleteSelected();
-      }
+      if (e.key === "Delete") { e.preventDefault(); deleteSelected(); }
       if (e.ctrlKey && e.key === "z") undo();
       if (e.ctrlKey && e.key === "y") redo();
-      if (e.shiftKey && e.key.toLowerCase() === "z") redo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteSelected, undo, redo]);
 
   /* -------------------------------------------------------
-      PAN (Middle Mouse / Space Drag simulation)
+      PAN & ZOOM
      -------------------------------------------------------- */
   const handlePointerDown = (e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
-
-    // FIX: Explicitly allow interaction with Inputs (Renaming)
     if (['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
 
     const isMiddle = e.button === 1;
-
-    // Allow panning if clicking on background or using middle mouse
     const onTable = target.closest(".table-node") !== null;
     if (!isMiddle && onTable) return;
 
@@ -107,62 +101,128 @@ function App() {
     const initialY = store.viewport.y;
 
     const move = (ev: PointerEvent) => {
-      store.setViewport(
-        initialX + (ev.clientX - startX),
-        initialY + (ev.clientY - startY)
-      );
+      store.setViewport(initialX + (ev.clientX - startX), initialY + (ev.clientY - startY));
     };
-
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
-  /* -------------------------------------------------------
-      ZOOM (Figma Style)
-     -------------------------------------------------------- */
   const handleWheel = (e: React.WheelEvent) => {
-    // Only zoom if not scrolling inside a menu or table
     if ((e.target as HTMLElement).closest('.overflow-auto')) return;
-
     e.preventDefault();
     const store = useDBStore.getState();
-    const intensity = 0.05;
-    const direction = e.deltaY > 0 ? -1 : 1;
-    const factor = 1 + direction * intensity;
+    const factor = 1 + (e.deltaY > 0 ? -1 : 1) * 0.05;
     const newScale = Math.min(4, Math.max(0.2, store.viewport.scale * factor));
     store.setScale(newScale, e.clientX, e.clientY);
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith(".dbb")) {
-      await importProject(file);
+  /* -------------------------------------------------------
+      SMART IMPORTER (Now with Auto-Merging!)
+     -------------------------------------------------------- */
+  const handleSafeImport = async (file: File) => {
+    try {
+      const text = await file.text();
+      let rawData;
+      try {
+        rawData = JSON.parse(text);
+      } catch {
+        toast.error("File is not valid JSON.");
+        return;
+      }
+
+      // --- VALIDATION ---
+      if (!rawData.tables || !Array.isArray(rawData.tables)) {
+        toast.error("Invalid Schema: No tables found.");
+        return;
+      }
+
+      // 1. Compile/Fix the NEW data
+      const result = ProjectCompiler.compile(rawData);
+
+      if (result.patchedData.tables.length === 0) {
+        toast.error("AI could not find any tables.");
+        return;
+      }
+
+      // 2. GET CURRENT STATE (To merge against)
+      const store = useDBStore.getState();
+      const existingTables = store.tables || [];
+      const existingRelations = store.relations || [];
+
+      // 3. MERGE TABLES (Filter out duplicates by ID)
+      const existingTableIds = new Set(existingTables.map((t: any) => t.id));
+      const newUniqueTables = result.patchedData.tables.filter(
+        (t: any) => !existingTableIds.has(t.id)
+      );
+
+      // 4. MERGE RELATIONS (Filter out duplicates by ID)
+      const existingRelIds = new Set(existingRelations.map((r: any) => r.id));
+      const newUniqueRelations = result.patchedData.relations.filter(
+        (r: any) => !existingRelIds.has(r.id)
+      );
+
+      // 5. CREATE MERGED PROJECT
+      const mergedProject = {
+        viewport: store.viewport, // Keep your current camera position
+        tables: [...existingTables, ...newUniqueTables],
+        relations: [...existingRelations, ...newUniqueRelations],
+      };
+
+      // 6. IMPORT THE COMBINED DATA
+      const safeFile = new File(
+        [JSON.stringify(mergedProject)],
+        file.name,
+        { type: "application/json" }
+      );
+
+      await importProject(safeFile);
+
+      // Only run auto-layout if we actually added something new
+      if (newUniqueTables.length > 0 && result.requiresLayout) {
+        await handleTidyUp();
+      }
+
+      toast.success(`Merged ${newUniqueTables.length} new tables!`);
+
+    } catch (err) {
+      console.error("Import failed:", err);
+      toast.error("Failed to load project.");
     }
+  };
+  
+  // Bridge: Takes JSON from AI Modal -> Converts to File -> Runs standard Import
+  const handleAIResult = async (jsonData: any) => {
+    // We wrap the JSON in a File object to reuse the compiler/validator logic in handleSafeImport
+    const file = new File(
+      [JSON.stringify(jsonData)],
+      "generated-schema.json",
+      { type: "application/json" }
+    );
+    await handleSafeImport(file);
   };
 
   return (
     <div className="w-full h-screen overflow-hidden bg-[#09090b] text-zinc-100 font-sans selection:bg-violet-500/30 relative flex flex-col bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))]">
 
-      {/* 1. MAIN CANVAS */}
       <main
         ref={mainRef}
         className="absolute inset-0 z-0 overflow-hidden cursor-grab active:cursor-grabbing"
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
-        onDrop={handleDrop}
+        onDrop={(e) => {
+          e.preventDefault();
+          const file = e.dataTransfer.files[0];
+          if (file) handleSafeImport(file);
+        }}
         onDragOver={(e) => e.preventDefault()}
       >
         <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px]"></div>
         <Canvas />
       </main>
-
-      {/* 2. UI LAYERS */}
 
       {/* Top Left: Menu */}
       <div className="absolute top-4 left-4 z-50 flex items-center gap-3 pointer-events-none">
@@ -174,11 +234,11 @@ function App() {
         </div>
 
         <div className="flex items-center gap-1 p-1 bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-xl shadow-xl pointer-events-auto">
-          <ControlButton onClick={saveProject} icon={<Save size={16} />} tooltip="Save Project" />
+          <ControlButton onClick={() => { saveProject(); toast.success("Project saved!"); }} icon={<Save size={16} />} tooltip="Save Project" />
           <label className="cursor-pointer">
-            <input type="file" accept=".dbb" className="hidden" onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) await importProject(file);
+            <input type="file" accept=".dbb,.json" className="hidden" onChange={(e) => {
+              if (e.target.files?.[0]) handleSafeImport(e.target.files[0]);
+              e.target.value = '';
             }} />
             <div className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-all">
               <FolderOpen size={16} />
@@ -193,8 +253,8 @@ function App() {
         {selectedRelationId && selectedRelation && (
           <div className="pointer-events-auto w-64 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
-              <span className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">Relationship</span>
-              <button onClick={() => deleteRelation(selectedRelationId)} className="text-red-400 hover:text-red-300 transition-colors">
+              <span className="text-xs font-semibold uppercase tracking-wider">Relationship</span>
+              <button onClick={() => deleteRelation(selectedRelationId)} className="text-red-400 hover:text-red-300">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -236,12 +296,26 @@ function App() {
       {!snipOpen && (
         <div className="absolute bottom-8 right-8 z-40 flex flex-col items-end gap-4 pointer-events-none">
 
-          {/* SINGLE SMART BUTTON */}
+          {/* GENERATE BUTTON (Connected) */}
+          <button
+            onClick={() => setGenerateOpen(true)}
+            className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-zinc-900/90 backdrop-blur-md border border-zinc-800 hover:border-violet-500/50 text-zinc-300 hover:text-white rounded-full shadow-lg shadow-black/50 transition-all active:scale-95 group"
+          >
+            <div className="relative">
+              <div className="absolute inset-0 bg-violet-500 blur-sm opacity-50 animate-pulse"></div>
+              <Wand2 className="w-4 h-4 text-violet-300 relative z-10" />
+            </div>
+            <span className="text-sm font-medium bg-gradient-to-r from-violet-200 to-white bg-clip-text text-transparent">
+              Generate
+            </span>
+          </button>
+
+          {/* Tidy Up */}
           <button
             onClick={handleTidyUp}
             className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-zinc-900/90 backdrop-blur-md border border-zinc-800 hover:border-violet-500/50 text-zinc-300 hover:text-white rounded-full shadow-lg shadow-black/50 transition-all active:scale-95 group"
           >
-            <Sparkles className="w-4 h-4 text-violet-400" />
+            <Sparkles className="w-4 h-4 text-zinc-400 group-hover:text-violet-400 transition-colors" />
             <span className="text-sm font-medium">Tidy Up</span>
           </button>
 
@@ -260,9 +334,8 @@ function App() {
               step="0.01"
               value={viewport.scale}
               onChange={(e) => {
-                const val = Number(e.target.value);
                 const rect = document.body.getBoundingClientRect();
-                setScale(val, rect.width / 2, rect.height / 2);
+                setScale(Number(e.target.value), rect.width / 2, rect.height / 2);
               }}
               className="w-24 accent-violet-500 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
             />
@@ -270,8 +343,18 @@ function App() {
         </div>
       )}
 
+      {/* OVERLAYS */}
       {snipOpen && <SnipOverlay onClose={() => setSnipOpen(false)} />}
+
+      {generateOpen && (
+        <GenerateModal
+          onClose={() => setGenerateOpen(false)}
+          onSuccess={handleAIResult}
+        />
+      )}
+
       <SQLDrawer />
+      <Toaster position="top-center" theme="dark" richColors />
 
     </div>
   );
